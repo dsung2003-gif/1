@@ -2,9 +2,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>Stable Detector FINAL</title>
+<title>FINAL OPENCV FIX</title>
 
-<!-- ✅ 안정 OpenCV -->
+<!-- OpenCV -->
 <script src="https://docs.opencv.org/4.x/opencv.js"></script>
 
 <style>
@@ -15,13 +15,24 @@ button { padding:10px 20px; margin-top:10px; }
 
 <body>
 
-<h2>🧠 FINAL STABLE DETECTOR</h2>
-<p id="status">Loading OpenCV...</p>
-<button id="startBtn" disabled>START</button>
+<h2>DETECTOR</h2>
+<p id="status">loading...</p>
+<button id="startBtn" disabled>start</button>
 
 <video id="video" autoplay playsinline style="display:none;"></video>
 
 <script>
+const status = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const video = document.getElementById("video");
+
+let stream = null;
+let src, gray, res;
+let templates = [];
+
+// --------------------
+// 이미지 (그대로 사용)
+// --------------------
 const images = [
   "https://i.ibb.co/3yRH1Hmz/1.png",
   "https://i.ibb.co/rG4nwvNQ/2.png",
@@ -39,138 +50,112 @@ const images = [
   "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
-let templates = [];
-let loaded = 0;
-
-let video = document.getElementById("video");
-let status = document.getElementById("status");
-let startBtn = document.getElementById("startBtn");
-
-let src, gray, res;
-let stream = null;
-let lastAlert = 0;
-
-// 🔊 sound
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function beep(){
-    const o = audioCtx.createOscillator();
-    o.connect(audioCtx.destination);
-    o.frequency.value = 900;
-    o.start();
-    o.stop(audioCtx.currentTime + 0.1);
-}
-
-// =======================
+// --------------------
 // TEMPLATE LOAD
-// =======================
-function loadTemplates(){
-    images.forEach((url,i)=>{
-        let img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = url;
+// --------------------
+function loadTemplates() {
+  let loaded = 0;
 
-        img.onload = () => {
-            let mat = cv.imread(img);
-            let g = new cv.Mat();
+  images.forEach((url, i) => {
+    let img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = url;
 
-            cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
-            cv.normalize(g, g, 0, 255, cv.NORM_MINMAX);
+    img.onload = () => {
+      let mat = cv.imread(img);
+      let grayMat = new cv.Mat();
 
-            templates.push({id:i+1, mat:g});
+      cv.cvtColor(mat, grayMat, cv.COLOR_RGBA2GRAY);
 
-            mat.delete();
-            loaded++;
+      templates.push({ id: i, mat: grayMat });
 
-            if(loaded === images.length){
-                status.innerText = "READY";
-                startBtn.disabled = false;
-            }
-        };
-    });
-}
+      mat.delete();
+      loaded++;
 
-// =======================
-// SAFE VIDEO START
-// =======================
-function waitVideo(){
-    if(!video.videoWidth || !video.videoHeight){
-        requestAnimationFrame(waitVideo);
-        return;
-    }
-    startLoop();
-}
-
-// =======================
-// MAIN LOOP
-// =======================
-function startLoop(){
-
-    function loop(){
-
-        if(!stream) return;
-
-        let w = video.videoWidth;
-        let h = video.videoHeight;
-
-        if(!w || !h){
-            requestAnimationFrame(loop);
-            return;
-        }
-
-        if(!src || src.cols !== w || src.rows !== h){
-            src = new cv.Mat(h, w, cv.CV_8UC4);
-            gray = new cv.Mat();
-            res = new cv.Mat();
-        }
-
-        let cap = new cv.VideoCapture(video);
-        cap.read(src);
-
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.normalize(gray, gray, 0, 255, cv.NORM_MINMAX);
-
-        let now = Date.now();
-
-        for(let t of templates){
-            cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
-            let m = cv.minMaxLoc(res);
-
-            if(m.maxVal > 0.88 && now - lastAlert > 800){
-                lastAlert = now;
-                status.innerText = "DETECTED: " + t.id;
-                beep();
-                break;
-            }
-        }
-
-        setTimeout(loop, 100);
-    }
-
-    loop();
-}
-
-// =======================
-// START BUTTON
-// =======================
-startBtn.onclick = async () => {
-    stream = await navigator.mediaDevices.getDisplayMedia({video:true});
-    video.srcObject = stream;
-
-    video.onloadedmetadata = () => {
-        waitVideo();
+      if (loaded === images.length) {
+        status.innerText = "READY";
+        startBtn.disabled = false;
+      }
     };
+  });
+}
+
+// --------------------
+// VIDEO START SAFE
+// --------------------
+function waitVideo() {
+  if (!video.videoWidth || !video.videoHeight) {
+    requestAnimationFrame(waitVideo);
+    return;
+  }
+
+  startLoop();
+}
+
+// --------------------
+// MAIN LOOP
+// --------------------
+function startLoop() {
+
+  function loop() {
+
+    if (!stream) return;
+
+    let w = video.videoWidth;
+    let h = video.videoHeight;
+
+    if (!w || !h) {
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    if (!src || src.cols !== w || src.rows !== h) {
+      src = new cv.Mat(h, w, cv.CV_8UC4);
+      gray = new cv.Mat();
+      res = new cv.Mat();
+    }
+
+    let cap = new cv.VideoCapture(video);
+    cap.read(src);
+
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    for (let t of templates) {
+      cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+
+      let m = cv.minMaxLoc(res);
+
+      if (m.maxVal > 0.88) {
+        status.innerText = "FOUND " + t.id;
+        break;
+      }
+    }
+
+    setTimeout(loop, 100);
+  }
+
+  loop();
+}
+
+// --------------------
+// START BUTTON
+// --------------------
+startBtn.onclick = async () => {
+  stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  video.srcObject = stream;
+
+  video.onloadedmetadata = () => {
+    waitVideo();
+  };
 };
 
-// =======================
-// OPEN CV INIT (핵심)
-// =======================
-function onReady(){
-    status.innerText = "OpenCV READY";
-    loadTemplates();
-}
-
-// ✔ 이게 핵심 포인트
-cv['onRuntimeInitialized'] = onReady;
+// --------------------
+// 🔥 핵심 FIX (이게 전부)
+// --------------------
+cv.onRuntimeInitialized = function () {
+  status.innerText = "OPENCV READY";
+  loadTemplates();
+};
 
 </script>
 
