@@ -2,30 +2,22 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>Stable Discord Detection</title>
+<title>Stable Detector FINAL</title>
 
-<!-- ✔ 안정 OpenCV CDN -->
-<script src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.5.5/opencv.min.js"></script>
+<!-- ✅ 안정 OpenCV -->
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
 
 <style>
-body {
-    background:#111;
-    color:white;
-    text-align:center;
-    font-family:sans-serif;
-}
-button {
-    padding:10px 20px;
-    margin-top:10px;
-}
+body { background:#111; color:white; text-align:center; font-family:sans-serif; }
+button { padding:10px 20px; margin-top:10px; }
 </style>
 </head>
 
 <body>
 
-<h2>🧠 Stable Image Detector</h2>
+<h2>🧠 FINAL STABLE DETECTOR</h2>
 <p id="status">Loading OpenCV...</p>
-<button id="startBtn" disabled>Start</button>
+<button id="startBtn" disabled>START</button>
 
 <video id="video" autoplay playsinline style="display:none;"></video>
 
@@ -58,22 +50,22 @@ let src, gray, res;
 let stream = null;
 let lastAlert = 0;
 
-// 🔊 소리
+// 🔊 sound
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function beep() {
-    const osc = audioCtx.createOscillator();
-    osc.connect(audioCtx.destination);
-    osc.frequency.value = 900;
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.15);
+function beep(){
+    const o = audioCtx.createOscillator();
+    o.connect(audioCtx.destination);
+    o.frequency.value = 900;
+    o.start();
+    o.stop(audioCtx.currentTime + 0.1);
 }
 
-// =========================
+// =======================
 // TEMPLATE LOAD
-// =========================
-function loadTemplates() {
-    images.forEach((url, i) => {
-        const img = new Image();
+// =======================
+function loadTemplates(){
+    images.forEach((url,i)=>{
+        let img = new Image();
         img.crossOrigin = "anonymous";
         img.src = url;
 
@@ -84,46 +76,48 @@ function loadTemplates() {
             cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
             cv.normalize(g, g, 0, 255, cv.NORM_MINMAX);
 
-            templates.push({ id: i + 1, mat: g });
+            templates.push({id:i+1, mat:g});
 
             mat.delete();
             loaded++;
 
-            if (loaded === images.length) {
-                status.innerText = "Ready";
+            if(loaded === images.length){
+                status.innerText = "READY";
                 startBtn.disabled = false;
             }
         };
     });
 }
 
-// =========================
-// VIDEO READY CHECK (핵심)
-// =========================
-function waitVideoReady() {
-    if (!video.videoWidth || !video.videoHeight) {
-        requestAnimationFrame(waitVideoReady);
+// =======================
+// SAFE VIDEO START
+// =======================
+function waitVideo(){
+    if(!video.videoWidth || !video.videoHeight){
+        requestAnimationFrame(waitVideo);
         return;
     }
-    startProcessing();
+    startLoop();
 }
 
-// =========================
+// =======================
 // MAIN LOOP
-// =========================
-function startProcessing() {
-    function process() {
-        if (!stream) return;
+// =======================
+function startLoop(){
+
+    function loop(){
+
+        if(!stream) return;
 
         let w = video.videoWidth;
         let h = video.videoHeight;
 
-        if (!w || !h) {
-            requestAnimationFrame(process);
+        if(!w || !h){
+            requestAnimationFrame(loop);
             return;
         }
 
-        if (!src || src.cols !== w || src.rows !== h) {
+        if(!src || src.cols !== w || src.rows !== h){
             src = new cv.Mat(h, w, cv.CV_8UC4);
             gray = new cv.Mat();
             res = new cv.Mat();
@@ -137,46 +131,46 @@ function startProcessing() {
 
         let now = Date.now();
 
-        for (let t of templates) {
+        for(let t of templates){
             cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
             let m = cv.minMaxLoc(res);
 
-            if (m.maxVal > 0.88 && now - lastAlert > 800) {
+            if(m.maxVal > 0.88 && now - lastAlert > 800){
                 lastAlert = now;
-                status.innerText = "Detected: " + t.id;
+                status.innerText = "DETECTED: " + t.id;
                 beep();
                 break;
             }
         }
 
-        setTimeout(process, 120);
+        setTimeout(loop, 100);
     }
 
-    process();
+    loop();
 }
 
-// =========================
+// =======================
 // START BUTTON
-// =========================
+// =======================
 startBtn.onclick = async () => {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    stream = await navigator.mediaDevices.getDisplayMedia({video:true});
     video.srcObject = stream;
 
     video.onloadedmetadata = () => {
-        waitVideoReady();
+        waitVideo();
     };
 };
 
-// =========================
-// INIT OPENCV
-// =========================
-function init() {
-    status.innerText = "Loading images...";
+// =======================
+// OPEN CV INIT (핵심)
+// =======================
+function onReady(){
+    status.innerText = "OpenCV READY";
     loadTemplates();
 }
 
-if (typeof cv !== "undefined") init();
-else document.addEventListener("opencvready", init);
+// ✔ 이게 핵심 포인트
+cv['onRuntimeInitialized'] = onReady;
 
 </script>
 
