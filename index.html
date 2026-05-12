@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>CV MAT ERROR KILLER</title>
+    <title>CV MAT ABSOLUTE FIX</title>
     <style>
         body { background:#111; color:white; text-align:center; font-family:sans-serif; padding-top: 50px; }
         #status { 
@@ -14,43 +14,28 @@
         button:disabled { background: #333; color: #777; cursor: not-allowed; }
         video { display: none; }
     </style>
+
+    <script>
+        // [핵심] OpenCV 설정 모듈을 '가장 먼저' 정의합니다.
+        var Module = {
+            onRuntimeInitialized: function() {
+                // 엔진 부팅이 완료되면 딱 한 번만 실행됩니다.
+                console.log("OpenCV 엔진 부팅 완료");
+                startLoadingImages(); 
+            }
+        };
+    </script>
+    <!-- 그 다음 라이브러리를 불러옵니다. -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
 
-<h2>이미지 감지 (엔진 최적화 버전)</h2>
-<div id="status">시스템 부팅 중... (잠시만 기다리세요)</div>
+<h2>감지 시스템 (엔진 동기화 완료)</h2>
+<div id="status">OpenCV 엔진 부팅 대기 중...</div>
 <button id="startBtn" disabled>화면 공유 시작</button>
 
 <video id="video" autoplay playsinline></video>
 
-<!-- 1. 엔진 부팅 확인용 스크립트 -->
-<script>
-    // OpenCV가 준비되었는지 확인할 변수
-    var isCvLoaded = false;
-
-    // 라이브러리가 로드되면 호출될 함수
-    function onOpenCvReady() {
-        console.log("OpenCV.js 로드 시도 중...");
-        // WASM 모듈이 완전히 준비될 때까지 0.5초 간격으로 반복 체크
-        var checkCv = setInterval(function() {
-            try {
-                if (typeof cv !== 'undefined' && cv.Mat) {
-                    console.log("OpenCV 엔진 부팅 완료!");
-                    clearInterval(checkCv);
-                    isCvLoaded = true;
-                    initApp(); // 이제 진짜 시작
-                }
-            } catch (e) {
-                console.log("엔진 로딩 대기 중...");
-            }
-        }, 500);
-    }
-</script>
-
-<!-- 2. OpenCV 라이브러리 로드 -->
-<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
-
-<!-- 3. 메인 로직 -->
 <script>
 const status = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
@@ -70,36 +55,39 @@ const imageUrls = [
     "https://i.ibb.co/n8q1fxHT/66.png", "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
-// 엔진 부팅 완료 후 실행되는 함수
-function initApp() {
-    status.innerText = "이미지 데이터를 준비합니다...";
-    loadTemplates();
-}
-
-async function loadTemplates() {
+// 엔진 부팅이 끝난 후에만 호출되는 함수
+async function startLoadingImages() {
+    status.innerText = "엔진 확인됨. 이미지 데이터를 로드합니다...";
+    
     let count = 0;
     for (let i = 0; i < imageUrls.length; i++) {
-        try {
-            await new Promise((resolve) => {
-                let img = new Image();
-                img.crossOrigin = "anonymous";
-                img.src = imageUrls[i];
-                img.onload = () => {
-                    // 이제 여기서 cv.Mat을 호출해도 절대로 에러 안 남
+        await new Promise((resolve) => {
+            let img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = imageUrls[i];
+            img.onload = () => {
+                // 이 시점엔 엔진이 켜져 있으므로 에러가 날 수 없음
+                try {
                     let mat = cv.imread(img);
                     let g = new cv.Mat();
                     cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
                     templates.push({ id: i + 1, mat: g });
                     mat.delete();
                     count++;
-                    status.innerText = `데이터 로드 중 (${count}/${imageUrls.length})`;
-                    resolve();
-                };
-                img.onerror = () => resolve();
-            });
-        } catch(e) { console.error(e); }
+                    status.innerText = `데이터 준비 중 (${count}/${imageUrls.length})`;
+                } catch(e) {
+                    console.error("이미지 변환 에러:", e);
+                }
+                resolve();
+            };
+            img.onerror = () => {
+                console.warn("이미지 로드 실패:", imageUrls[i]);
+                resolve();
+            };
+        });
     }
-    status.innerText = "모든 준비 완료!";
+    
+    status.innerText = "모든 준비가 완료되었습니다!";
     startBtn.disabled = false;
 }
 
@@ -115,7 +103,7 @@ function loop() {
             return;
         }
 
-        // 그릇 크기 맞추기
+        // 그릇(Mat) 크기 체크 및 생성
         if (!src || src.cols !== vw || src.rows !== vh) {
             if (src) src.delete();
             if (gray) gray.delete();
@@ -140,12 +128,12 @@ function loop() {
         }
 
         if (bestMatch.val > 0.75) {
-            status.innerText = `감지: 이미지 ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
+            status.innerText = `✅ 감지됨: ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
         } else {
-            status.innerText = `분석 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
+            status.innerText = `🔍 스캔 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
         }
     } catch (e) {
-        console.warn("일시적 루프 에러 무시");
+        console.warn("루프 일시 오류:", e);
     }
     setTimeout(loop, 150);
 }
@@ -159,7 +147,7 @@ startBtn.onclick = async () => {
             loop();
         };
     } catch (err) {
-        status.innerText = "권한 거부됨";
+        status.innerText = "화면 공유가 필요합니다.";
     }
 };
 </script>
