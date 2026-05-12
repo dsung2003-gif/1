@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>14종 아이템 감지 시스템</title>
+
+<script async src="https://docs.opencv.org/4.5.4/opencv.js"></script>
+
+<style>
+body { background:#111; color:#fff; font-family:sans-serif; text-align:center; }
+.hidden { display:none; }
+button { padding:10px 20px; font-size:16px; margin-top:10px; }
+</style>
+</head>
+
+<body>
+
+<h2>🧠 14종 실시간 감지 시스템</h2>
+<p id="status">Loading...</p>
+<button id="startBtn" disabled>Start Detection</button>
+
+<video id="video" autoplay class="hidden"></video>
+
+<script>
+const itemImages = [
+  "https://i.ibb.co/3yRH1Hmz/1.png",
+  "https://i.ibb.co/rG4nwvNQ/2.png",
+  "https://i.ibb.co/hxXwKmp0/3.png",
+  "https://i.ibb.co/yBFycHT2/4.png",
+  "https://i.ibb.co/60YPKx7K/5.png",
+  "https://i.ibb.co/Pz6FGPdq/6.png",
+  "https://i.ibb.co/vCgC8tpB/7.png",
+  "https://i.ibb.co/S792Rgmy/11.png",
+  "https://i.ibb.co/tMw1m7wk/22.png",
+  "https://i.ibb.co/9mYY0gtV/33.png",
+  "https://i.ibb.co/KMx3CJW/44.png",
+  "https://i.ibb.co/1Gx5RCsG/55.png",
+  "https://i.ibb.co/n8q1fxHT/66.png",
+  "https://i.ibb.co/99Pp9R1G/77.png"
+];
+
+let templates = [];
+let loaded = 0;
+
+let src, gray, res;
+let stream = null;
+let lastAlert = 0;
+
+const status = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const video = document.getElementById("video");
+
+// 🔊 소리
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function beep() {
+    const osc = audioCtx.createOscillator();
+    osc.connect(audioCtx.destination);
+    osc.frequency.value = 900;
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.15);
+}
+
+// 📦 템플릿 로딩
+function loadTemplates() {
+    itemImages.forEach((url, i) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = url;
+
+        img.onload = () => {
+            let mat = cv.imread(img);
+            let g = new cv.Mat();
+
+            cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
+            cv.normalize(g, g, 0, 255, cv.NORM_MINMAX);
+
+            templates.push({ id: i + 1, mat: g });
+
+            mat.delete();
+            loaded++;
+
+            if (loaded === itemImages.length) {
+                status.innerText = "Ready (14 items loaded)";
+                startBtn.disabled = false;
+            }
+        };
+    });
+}
+
+// ⚡ 감지 루프
+function process() {
+    if (!stream) return;
+
+    let w = video.videoWidth;
+    let h = video.videoHeight;
+
+    if (!w || !h) {
+        requestAnimationFrame(process);
+        return;
+    }
+
+    if (!src) {
+        src = new cv.Mat(h, w, cv.CV_8UC4);
+        gray = new cv.Mat();
+        res = new cv.Mat();
+    }
+
+    const cap = new cv.VideoCapture(video);
+    cap.read(src);
+
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.normalize(gray, gray, 0, 255, cv.NORM_MINMAX);
+
+    let now = Date.now();
+
+    for (let t of templates) {
+        cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+        let m = cv.minMaxLoc(res);
+
+        if (m.maxVal > 0.88 && now - lastAlert > 800) {
+            lastAlert = now;
+            status.innerText = "🎯 감지: 아이템 " + t.id;
+            beep();
+            break;
+        }
+    }
+
+    setTimeout(process, 120);
+}
+
+// ▶ 시작
+startBtn.onclick = async () => {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    video.srcObject = stream;
+
+    video.onloadedmetadata = () => {
+        process();
+    };
+};
+
+// OpenCV init
+function init() {
+    status.innerText = "Loading templates...";
+    loadTemplates();
+}
+
+if (typeof cv !== "undefined") init();
+else document.querySelector("script").onload = init;
+
+</script>
+
+</body>
+</html>
