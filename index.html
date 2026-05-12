@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>FINAL STABLE FIX</title>
+    <title>CV MAT FIX</title>
     <style>
         body { background:#111; color:white; text-align:center; font-family:sans-serif; padding-top: 50px; }
         #status { 
@@ -14,45 +14,39 @@
         button:disabled { background: #333; color: #777; cursor: not-allowed; }
         video { display: none; }
     </style>
+
+    <!-- 1. OpenCV 설정 모듈을 먼저 선언 (가장 중요) -->
+    <script>
+        var Module = {
+            onRuntimeInitialized: function() {
+                // OpenCV가 완전히 로드되면 이 함수가 실행됩니다.
+                console.log("OpenCV Runtime Ready");
+                onOpenCvInitSuccess();
+            }
+        };
+    </script>
+    
+    <!-- 2. 그 다음 OpenCV 라이브러리를 로드 -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
 
-<h2>실시간 감지 시스템 (로딩 오류 수정)</h2>
-<div id="status">OpenCV 라이브러리를 불러오는 중...</div>
+<h2>감지 시스템 (에러 차단판)</h2>
+<div id="status">라이브러리 엔진 초기화 중...</div>
 <button id="startBtn" disabled>화면 공유 시작</button>
 
 <video id="video" autoplay playsinline></video>
-
-<!-- OpenCV.js 로딩 방식을 수정했습니다 -->
-<script>
-var cvReady = false;
-function onOpenCvReady() {
-    cvReady = true;
-    console.log("OpenCV.js is Ready.");
-    checkAndInit();
-}
-
-// 라이브러리 로드 확인 후 실행하는 안전 장치
-function checkAndInit() {
-    if (typeof cv !== 'undefined' && cv.Mat) {
-        status.innerText = "템플릿 이미지를 읽어들이는 중...";
-        loadTemplates();
-    } else {
-        setTimeout(checkAndInit, 100); // 0.1초마다 재확인
-    }
-}
-</script>
-<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
 
 <script>
 const status = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
 const video = document.getElementById("video");
 
-let src = null, gray = null, res = null;
+let src, gray, res;
 let templates = [];
 let isRunning = false;
 
+// 이미지 목록
 const imageUrls = [
     "https://i.ibb.co/3yRH1Hmz/1.png", "https://i.ibb.co/rG4nwvNQ/2.png",
     "https://i.ibb.co/hxXwKmp0/3.png", "https://i.ibb.co/yBFycHT2/4.png",
@@ -63,33 +57,36 @@ const imageUrls = [
     "https://i.ibb.co/n8q1fxHT/66.png", "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
+// OpenCV가 완전히 준비되었을 때만 호출됨
+function onOpenCvInitSuccess() {
+    status.innerText = "이미지 데이터를 준비합니다...";
+    loadTemplates();
+}
+
 async function loadTemplates() {
     let count = 0;
-    const promises = imageUrls.map((url, i) => {
-        return new Promise((resolve) => {
-            let img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = url;
-            img.onload = () => {
-                try {
+    // 이제 여기서는 cv.Mat이 무조건 존재함
+    for (let i = 0; i < imageUrls.length; i++) {
+        try {
+            await new Promise((resolve) => {
+                let img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = imageUrls[i];
+                img.onload = () => {
                     let mat = cv.imread(img);
                     let g = new cv.Mat();
                     cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
                     templates.push({ id: i + 1, mat: g });
                     mat.delete();
                     count++;
-                    status.innerText = `이미지 로드 중 (${count}/${imageUrls.length})`;
-                } catch(e) { console.error("Mat 생성 실패:", e); }
-                resolve();
-            };
-            img.onerror = () => {
-                console.error("이미지 경로 오류:", url);
-                resolve();
-            };
-        });
-    });
-    await Promise.all(promises);
-    status.innerText = "준비 완료! 시작 버튼을 누르세요.";
+                    status.innerText = `데이터 로드 중 (${count}/${imageUrls.length})`;
+                    resolve();
+                };
+                img.onerror = () => resolve();
+            });
+        } catch(e) { console.error(e); }
+    }
+    status.innerText = "준비 완료!";
     startBtn.disabled = false;
 }
 
@@ -97,13 +94,13 @@ function loop() {
     if (!isRunning) return;
 
     try {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-
-        if (vw === 0 || vh === 0) {
+        if (video.videoWidth === 0) {
             requestAnimationFrame(loop);
             return;
         }
+
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
 
         if (!src || src.cols !== vw || src.rows !== vh) {
             if (src) src.delete();
@@ -128,14 +125,16 @@ function loop() {
             }
         }
 
-        if (bestMatch.val > 0.7) {
-            status.innerText = `✅ 감지됨: ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
+        if (bestMatch.val > 0.75) {
+            status.innerText = `감지: 이미지 ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
             status.style.color = "#0f0";
         } else {
-            status.innerText = `🔍 스캔 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
+            status.innerText = `대기 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
             status.style.color = "white";
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error("루프 중 에러:", e);
+    }
     setTimeout(loop, 150);
 }
 
@@ -148,7 +147,7 @@ startBtn.onclick = async () => {
             loop();
         };
     } catch (err) {
-        status.innerText = "화면 공유 권한이 필요합니다.";
+        status.innerText = "권한 거부됨";
     }
 };
 </script>
