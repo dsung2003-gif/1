@@ -1,155 +1,72 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>CV MAT ABSOLUTE FIX</title>
-    <style>
-        body { background:#111; color:white; text-align:center; font-family:sans-serif; padding-top: 50px; }
-        #status { 
-            font-size: 18px; font-weight: bold; color: #0f0; 
-            margin: 20px auto; padding: 20px; width: 80%; max-width: 600px;
-            border: 2px solid #444; background: #222; border-radius: 10px;
-        }
-        button { padding: 15px 40px; font-size: 18px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 8px; }
-        button:disabled { background: #333; color: #777; cursor: not-allowed; }
-        video { display: none; }
-    </style>
-
-    <script>
-        // [핵심] OpenCV 설정 모듈을 '가장 먼저' 정의합니다.
-        var Module = {
-            onRuntimeInitialized: function() {
-                // 엔진 부팅이 완료되면 딱 한 번만 실행됩니다.
-                console.log("OpenCV 엔진 부팅 완료");
-                startLoadingImages(); 
-            }
-        };
-    </script>
-    <!-- 그 다음 라이브러리를 불러옵니다. -->
-    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-</head>
-<body>
-
-<h2>감지 시스템 (엔진 동기화 완료)</h2>
-<div id="status">OpenCV 엔진 부팅 대기 중...</div>
-<button id="startBtn" disabled>화면 공유 시작</button>
-
-<video id="video" autoplay playsinline></video>
-
-<script>
-const status = document.getElementById("status");
-const startBtn = document.getElementById("startBtn");
-const video = document.getElementById("video");
-
-let src, gray, res;
-let templates = [];
-let isRunning = false;
-
-const imageUrls = [
-    "https://i.ibb.co/3yRH1Hmz/1.png", "https://i.ibb.co/rG4nwvNQ/2.png",
-    "https://i.ibb.co/hxXwKmp0/3.png", "https://i.ibb.co/yBFycHT2/4.png",
-    "https://i.ibb.co/60YPKx7K/5.png", "https://i.ibb.co/Pz6FGPdq/6.png",
-    "https://i.ibb.co/vCgC8tpB/7.png", "https://i.ibb.co/S792Rgmy/11.png",
-    "https://i.ibb.co/tMw1m7wk/22.png", "https://i.ibb.co/9mYY0gtV/33.png",
-    "https://i.ibb.co/KMx3CJW/44.png", "https://i.ibb.co/1Gx5RCsG/55.png",
-    "https://i.ibb.co/n8q1fxHT/66.png", "https://i.ibb.co/99Pp9R1G/77.png"
-];
-
-// 엔진 부팅이 끝난 후에만 호출되는 함수
-async function startLoadingImages() {
-    status.innerText = "엔진 확인됨. 이미지 데이터를 로드합니다...";
-    
-    let count = 0;
-    for (let i = 0; i < imageUrls.length; i++) {
-        await new Promise((resolve) => {
-            let img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = imageUrls[i];
-            img.onload = () => {
-                // 이 시점엔 엔진이 켜져 있으므로 에러가 날 수 없음
-                try {
-                    let mat = cv.imread(img);
-                    let g = new cv.Mat();
-                    cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
-                    templates.push({ id: i + 1, mat: g });
-                    mat.delete();
-                    count++;
-                    status.innerText = `데이터 준비 중 (${count}/${imageUrls.length})`;
-                } catch(e) {
-                    console.error("이미지 변환 에러:", e);
-                }
-                resolve();
-            };
-            img.onerror = () => {
-                console.warn("이미지 로드 실패:", imageUrls[i]);
-                resolve();
-            };
-        });
-    }
-    
-    status.innerText = "모든 준비가 완료되었습니다!";
-    startBtn.disabled = false;
-}
-
 function loop() {
     if (!isRunning) return;
 
     try {
+        // 1. 비디오 상태 확인
+        if (video.paused || video.ended) return;
+
         const vw = video.videoWidth;
         const vh = video.videoHeight;
 
-        if (vw === 0) {
+        if (vw === 0 || vh === 0) {
             requestAnimationFrame(loop);
             return;
         }
 
-        // 그릇(Mat) 크기 체크 및 생성
+        // 2. Mat 객체 안전 생성 및 재사용
         if (!src || src.cols !== vw || src.rows !== vh) {
             if (src) src.delete();
             if (gray) gray.delete();
             if (res) res.delete();
+            
             src = new cv.Mat(vh, vw, cv.CV_8UC4);
             gray = new cv.Mat();
             res = new cv.Mat();
+            cap = new cv.VideoCapture(video);
         }
 
-        let cap = new cv.VideoCapture(video);
+        // 3. 화면 읽기 시도
         cap.read(src);
+        if (src.empty()) {
+            requestAnimationFrame(loop);
+            return;
+        }
+
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
         let bestMatch = { id: -1, val: 0 };
+
+        // 4. 템플릿 매칭
         for (let t of templates) {
+            // 중요: 템플릿 Mat이 유효한지, 화면보다 작은지 확인
+            if (!t.mat || t.mat.empty()) continue;
             if (t.mat.cols > gray.cols || t.mat.rows > gray.rows) continue;
-            cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
-            let m = cv.minMaxLoc(res);
-            if (m.maxVal > bestMatch.val) {
-                bestMatch = { id: t.id, val: m.maxVal };
+
+            try {
+                cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+                let m = cv.minMaxLoc(res);
+                if (m.maxVal > bestMatch.val) {
+                    bestMatch = { id: t.id, val: m.maxVal };
+                }
+            } catch (matchError) {
+                // 특정 템플릿에서만 에러가 날 경우 건너뜀
+                continue;
             }
         }
 
+        // 5. 결과 업데이트
         if (bestMatch.val > 0.75) {
-            status.innerText = `✅ 감지됨: ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
+            status.innerText = `✅ 감지: ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
         } else {
-            status.innerText = `🔍 스캔 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
+            status.innerText = `🔍 스캔 중... (최고: ${Math.round(bestMatch.val * 100)}%)`;
         }
+
     } catch (e) {
-        console.warn("루프 일시 오류:", e);
+        // 어떤 오류인지 상세히 출력하여 디버깅을 돕습니다.
+        console.warn("루프 내부 세부 오류:", e);
     }
+
+    // 다음 프레임 예약 (setTimeout 대신 requestAnimationFrame 고려 가능하나 
+    // 부하 조절을 위해선 setTimeout이 유리합니다)
     setTimeout(loop, 150);
 }
-
-startBtn.onclick = async () => {
-    try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-            isRunning = true;
-            loop();
-        };
-    } catch (err) {
-        status.innerText = "화면 공유가 필요합니다.";
-    }
-};
-</script>
-</body>
-</html>
