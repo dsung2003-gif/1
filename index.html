@@ -1,35 +1,27 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<title>FINAL FIX</title>
-
-<script>
-var Module = {
-    onRuntimeInitialized() {
-        initApp();
-    }
-};
-</script>
-
-<script src="https://docs.opencv.org/4.x/opencv.js"></script>
-
-<style>
-body { background:#111; color:white; text-align:center; font-family:sans-serif; }
-button { padding:10px 20px; margin-top:10px; }
-</style>
+    <meta charset="UTF-8">
+    <title>DETECTOR - OPTIMIZED</title>
+    <!-- OpenCV.js 로드 완료 후 실행되도록 수정 -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+    <style>
+        body { background:#111; color:white; text-align:center; font-family:sans-serif; margin-top: 50px; }
+        button { padding:10px 20px; cursor: pointer; font-size: 16px; }
+        #status { font-weight: bold; color: #0f0; margin: 20px 0; }
+        #video { border: 1px solid #444; }
+    </style>
 </head>
-
 <body>
 
-<h2>DETECTOR</h2>
-<p id="status">loading...</p>
-<button id="startBtn" disabled>start</button>
+<h2>실시간 이미지 감지기</h2>
+<p id="status">OpenCV 로딩 중...</p>
+<button id="startBtn" disabled>화면 공유 시작</button>
 
-<video id="video" autoplay playsinline style="display:none;"></video>
+<!-- 디버깅을 위해 비디오를 작게 표시하거나 hidden 유지 -->
+<video id="video" autoplay playsinline style="display:none; width: 320px;"></video>
 
 <script>
-
 const status = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
 const video = document.getElementById("video");
@@ -37,120 +29,114 @@ const video = document.getElementById("video");
 let stream = null;
 let src, gray, res;
 let templates = [];
+let isRunning = false;
 
-// 이미지
-const images = [
- "https://i.ibb.co/3yRH1Hmz/1.png",
- "https://i.ibb.co/rG4nwvNQ/2.png",
- "https://i.ibb.co/hxXwKmp0/3.png",
- "https://i.ibb.co/yBFycHT2/4.png",
- "https://i.ibb.co/60YPKx7K/5.png",
- "https://i.ibb.co/Pz6FGPdq/6.png",
- "https://i.ibb.co/vCgC8tpB/7.png",
- "https://i.ibb.co/S792Rgmy/11.png",
- "https://i.ibb.co/tMw1m7wk/22.png",
- "https://i.ibb.co/9mYY0gtV/33.png",
- "https://i.ibb.co/KMx3CJW/44.png",
- "https://i.ibb.co/1Gx5RCsG/55.png",
- "https://i.ibb.co/n8q1fxHT/66.png",
- "https://i.ibb.co/99Pp9R1G/77.png"
+const imageUrls = [
+    "https://i.ibb.co/3yRH1Hmz/1.png", "https://i.ibb.co/rG4nwvNQ/2.png",
+    "https://i.ibb.co/hxXwKmp0/3.png", "https://i.ibb.co/yBFycHT2/4.png",
+    "https://i.ibb.co/60YPKx7K/5.png", "https://i.ibb.co/Pz6FGPdq/6.png",
+    "https://i.ibb.co/vCgC8tpB/7.png", "https://i.ibb.co/S792Rgmy/11.png",
+    "https://i.ibb.co/tMw1m7wk/22.png", "https://i.ibb.co/9mYY0gtV/33.png",
+    "https://i.ibb.co/KMx3CJW/44.png", "https://i.ibb.co/1Gx5RCsG/55.png",
+    "https://i.ibb.co/n8q1fxHT/66.png", "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
-// --------------------
-// INIT AFTER OPENCV READY
-// --------------------
-function initApp() {
-    status.innerText = "OPENCV READY";
+// 1. OpenCV 로드 완료 시 호출
+function onOpenCvReady() {
+    status.innerText = "템플릿 이미지 불러오는 중...";
     loadTemplates();
 }
 
-// --------------------
-// LOAD TEMPLATES
-// --------------------
-function loadTemplates() {
-    let loaded = 0;
+// 2. 이미지 프리로딩 (비동기 처리)
+async function loadTemplates() {
+    try {
+        const promises = imageUrls.map((url, i) => {
+            return new Promise((resolve, reject) => {
+                let img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = url;
+                img.onload = () => {
+                    let mat = cv.imread(img);
+                    let grayMat = new cv.Mat();
+                    cv.cvtColor(mat, grayMat, cv.COLOR_RGBA2GRAY);
+                    templates.push({ id: i + 1, mat: grayMat });
+                    mat.delete(); // 원본 mat 메모리 해제
+                    resolve();
+                };
+                img.onerror = reject;
+            });
+        });
 
-    images.forEach((url, i) => {
-        let img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = url;
-
-        img.onload = () => {
-            let mat = cv.imread(img);
-            let g = new cv.Mat();
-
-            cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
-
-            templates.push({ id: i, mat: g });
-
-            mat.delete();
-            loaded++;
-
-            if (loaded === images.length) {
-                status.innerText = "READY";
-                startBtn.disabled = false;
-            }
-        };
-    });
-}
-
-// --------------------
-// VIDEO WAIT
-// --------------------
-function waitVideo() {
-    if (!video.videoWidth || !video.videoHeight) {
-        requestAnimationFrame(waitVideo);
-        return;
+        await Promise.all(promises);
+        status.innerText = "준비 완료!";
+        startBtn.disabled = false;
+    } catch (err) {
+        status.innerText = "이미지 로드 실패. CORS 설정을 확인하세요.";
+        console.error(err);
     }
-    loop();
 }
 
-// --------------------
-// MAIN LOOP
-// --------------------
+// 3. 메인 루프 (성능 최적화)
 function loop() {
+    if (!isRunning || !stream) return;
 
-    if (!stream) return;
+    try {
+        let cap = new cv.VideoCapture(video);
+        cap.read(src);
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    let w = video.videoWidth;
-    let h = video.videoHeight;
+        let foundId = null;
+        let maxVal = 0;
 
-    if (!src || src.cols !== w || src.rows !== h) {
-        src = new cv.Mat(h, w, cv.CV_8UC4);
-        gray = new cv.Mat();
-        res = new cv.Mat();
-    }
+        for (let t of templates) {
+            // 템플릿 크기가 소스보다 크면 에러 발생하므로 예외 처리
+            if (t.mat.cols > gray.cols || t.mat.rows > gray.rows) continue;
 
-    let cap = new cv.VideoCapture(video);
-    cap.read(src);
+            cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+            let m = cv.minMaxLoc(res);
 
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-    for (let t of templates) {
-        cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
-        let m = cv.minMaxLoc(res);
-
-        if (m.maxVal > 0.88) {
-            status.innerText = "FOUND " + t.id;
-            break;
+            if (m.maxVal > 0.88) {
+                foundId = t.id;
+                maxVal = m.maxVal;
+                break; // 하나라도 찾으면 중단 (성능)
+            }
         }
+
+        if (foundId) {
+            status.innerText = `발견: 이미지 ${foundId} (정확도: ${(maxVal * 100).toFixed(1)}%)`;
+            status.style.color = "#0f0";
+        } else {
+            status.innerText = "스캔 중...";
+            status.style.color = "white";
+        }
+
+    } catch (e) {
+        console.error("루프 오류:", e);
     }
 
+    // setTimeout 대신 requestAnimationFrame 사용 권장
+    // 하지만 CPU 부하를 줄이려면 100ms 간격을 유지하는 것이 좋습니다.
     setTimeout(loop, 100);
 }
 
-// --------------------
-// START
-// --------------------
+// 4. 시작 버튼 이벤트
 startBtn.onclick = async () => {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-    video.srcObject = stream;
-
-    video.onloadedmetadata = () => {
-        waitVideo();
-    };
+    try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        video.srcObject = stream;
+        
+        video.onloadedmetadata = () => {
+            // 필요한 Mat 객체들을 루프 밖에서 한 번만 생성 (메모리 관리)
+            src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+            gray = new cv.Mat();
+            res = new cv.Mat();
+            isRunning = true;
+            loop();
+        };
+    } catch (err) {
+        console.error("화면 공유 거부됨:", err);
+    }
 };
-
 </script>
 
 </body>
