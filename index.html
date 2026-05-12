@@ -2,9 +2,16 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>FINAL OPENCV FIX</title>
+<title>FINAL FIX</title>
 
-<!-- OpenCV -->
+<script>
+var Module = {
+    onRuntimeInitialized() {
+        initApp();
+    }
+};
+</script>
+
 <script src="https://docs.opencv.org/4.x/opencv.js"></script>
 
 <style>
@@ -22,6 +29,7 @@ button { padding:10px 20px; margin-top:10px; }
 <video id="video" autoplay playsinline style="display:none;"></video>
 
 <script>
+
 const status = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
 const video = document.getElementById("video");
@@ -30,89 +38,87 @@ let stream = null;
 let src, gray, res;
 let templates = [];
 
-// --------------------
-// 이미지 (그대로 사용)
-// --------------------
+// 이미지
 const images = [
-  "https://i.ibb.co/3yRH1Hmz/1.png",
-  "https://i.ibb.co/rG4nwvNQ/2.png",
-  "https://i.ibb.co/hxXwKmp0/3.png",
-  "https://i.ibb.co/yBFycHT2/4.png",
-  "https://i.ibb.co/60YPKx7K/5.png",
-  "https://i.ibb.co/Pz6FGPdq/6.png",
-  "https://i.ibb.co/vCgC8tpB/7.png",
-  "https://i.ibb.co/S792Rgmy/11.png",
-  "https://i.ibb.co/tMw1m7wk/22.png",
-  "https://i.ibb.co/9mYY0gtV/33.png",
-  "https://i.ibb.co/KMx3CJW/44.png",
-  "https://i.ibb.co/1Gx5RCsG/55.png",
-  "https://i.ibb.co/n8q1fxHT/66.png",
-  "https://i.ibb.co/99Pp9R1G/77.png"
+ "https://i.ibb.co/3yRH1Hmz/1.png",
+ "https://i.ibb.co/rG4nwvNQ/2.png",
+ "https://i.ibb.co/hxXwKmp0/3.png",
+ "https://i.ibb.co/yBFycHT2/4.png",
+ "https://i.ibb.co/60YPKx7K/5.png",
+ "https://i.ibb.co/Pz6FGPdq/6.png",
+ "https://i.ibb.co/vCgC8tpB/7.png",
+ "https://i.ibb.co/S792Rgmy/11.png",
+ "https://i.ibb.co/tMw1m7wk/22.png",
+ "https://i.ibb.co/9mYY0gtV/33.png",
+ "https://i.ibb.co/KMx3CJW/44.png",
+ "https://i.ibb.co/1Gx5RCsG/55.png",
+ "https://i.ibb.co/n8q1fxHT/66.png",
+ "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
 // --------------------
-// TEMPLATE LOAD
+// INIT AFTER OPENCV READY
 // --------------------
-function loadTemplates() {
-  let loaded = 0;
-
-  images.forEach((url, i) => {
-    let img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = url;
-
-    img.onload = () => {
-      let mat = cv.imread(img);
-      let grayMat = new cv.Mat();
-
-      cv.cvtColor(mat, grayMat, cv.COLOR_RGBA2GRAY);
-
-      templates.push({ id: i, mat: grayMat });
-
-      mat.delete();
-      loaded++;
-
-      if (loaded === images.length) {
-        status.innerText = "READY";
-        startBtn.disabled = false;
-      }
-    };
-  });
+function initApp() {
+    status.innerText = "OPENCV READY";
+    loadTemplates();
 }
 
 // --------------------
-// VIDEO START SAFE
+// LOAD TEMPLATES
+// --------------------
+function loadTemplates() {
+    let loaded = 0;
+
+    images.forEach((url, i) => {
+        let img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = url;
+
+        img.onload = () => {
+            let mat = cv.imread(img);
+            let g = new cv.Mat();
+
+            cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
+
+            templates.push({ id: i, mat: g });
+
+            mat.delete();
+            loaded++;
+
+            if (loaded === images.length) {
+                status.innerText = "READY";
+                startBtn.disabled = false;
+            }
+        };
+    });
+}
+
+// --------------------
+// VIDEO WAIT
 // --------------------
 function waitVideo() {
-  if (!video.videoWidth || !video.videoHeight) {
-    requestAnimationFrame(waitVideo);
-    return;
-  }
-
-  startLoop();
+    if (!video.videoWidth || !video.videoHeight) {
+        requestAnimationFrame(waitVideo);
+        return;
+    }
+    loop();
 }
 
 // --------------------
 // MAIN LOOP
 // --------------------
-function startLoop() {
-
-  function loop() {
+function loop() {
 
     if (!stream) return;
 
     let w = video.videoWidth;
     let h = video.videoHeight;
 
-    if (!w || !h) {
-      requestAnimationFrame(loop);
-      return;
-    }
-
     if (!src || src.cols !== w || src.rows !== h) {
-      src = new cv.Mat(h, w, cv.CV_8UC4);
-      gray = new cv.Mat();
-      res = new cv.Mat();
+        src = new cv.Mat(h, w, cv.CV_8UC4);
+        gray = new cv.Mat();
+        res = new cv.Mat();
     }
 
     let cap = new cv.VideoCapture(video);
@@ -121,40 +127,28 @@ function startLoop() {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
     for (let t of templates) {
-      cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+        cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+        let m = cv.minMaxLoc(res);
 
-      let m = cv.minMaxLoc(res);
-
-      if (m.maxVal > 0.88) {
-        status.innerText = "FOUND " + t.id;
-        break;
-      }
+        if (m.maxVal > 0.88) {
+            status.innerText = "FOUND " + t.id;
+            break;
+        }
     }
 
     setTimeout(loop, 100);
-  }
-
-  loop();
 }
 
 // --------------------
-// START BUTTON
+// START
 // --------------------
 startBtn.onclick = async () => {
-  stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-  video.srcObject = stream;
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    video.srcObject = stream;
 
-  video.onloadedmetadata = () => {
-    waitVideo();
-  };
-};
-
-// --------------------
-// 🔥 핵심 FIX (이게 전부)
-// --------------------
-cv.onRuntimeInitialized = function () {
-  status.innerText = "OPENCV READY";
-  loadTemplates();
+    video.onloadedmetadata = () => {
+        waitVideo();
+    };
 };
 
 </script>
