@@ -2,27 +2,35 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>14종 아이템 감지 시스템</title>
+<title>Stable Discord Detection</title>
 
-<script async src="https://docs.opencv.org/4.5.4/opencv.js"></script>
+<!-- ✔ 안정 OpenCV CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.5.5/opencv.min.js"></script>
 
 <style>
-body { background:#111; color:#fff; font-family:sans-serif; text-align:center; }
-.hidden { display:none; }
-button { padding:10px 20px; font-size:16px; margin-top:10px; }
+body {
+    background:#111;
+    color:white;
+    text-align:center;
+    font-family:sans-serif;
+}
+button {
+    padding:10px 20px;
+    margin-top:10px;
+}
 </style>
 </head>
 
 <body>
 
-<h2>🧠 14종 실시간 감지 시스템</h2>
-<p id="status">Loading...</p>
-<button id="startBtn" disabled>Start Detection</button>
+<h2>🧠 Stable Image Detector</h2>
+<p id="status">Loading OpenCV...</p>
+<button id="startBtn" disabled>Start</button>
 
-<video id="video" autoplay class="hidden"></video>
+<video id="video" autoplay playsinline style="display:none;"></video>
 
 <script>
-const itemImages = [
+const images = [
   "https://i.ibb.co/3yRH1Hmz/1.png",
   "https://i.ibb.co/rG4nwvNQ/2.png",
   "https://i.ibb.co/hxXwKmp0/3.png",
@@ -42,13 +50,13 @@ const itemImages = [
 let templates = [];
 let loaded = 0;
 
+let video = document.getElementById("video");
+let status = document.getElementById("status");
+let startBtn = document.getElementById("startBtn");
+
 let src, gray, res;
 let stream = null;
 let lastAlert = 0;
-
-const status = document.getElementById("status");
-const startBtn = document.getElementById("startBtn");
-const video = document.getElementById("video");
 
 // 🔊 소리
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -60,9 +68,11 @@ function beep() {
     osc.stop(audioCtx.currentTime + 0.15);
 }
 
-// 📦 템플릿 로딩
+// =========================
+// TEMPLATE LOAD
+// =========================
 function loadTemplates() {
-    itemImages.forEach((url, i) => {
+    images.forEach((url, i) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.src = url;
@@ -79,73 +89,94 @@ function loadTemplates() {
             mat.delete();
             loaded++;
 
-            if (loaded === itemImages.length) {
-                status.innerText = "Ready (14 items loaded)";
+            if (loaded === images.length) {
+                status.innerText = "Ready";
                 startBtn.disabled = false;
             }
         };
     });
 }
 
-// ⚡ 감지 루프
-function process() {
-    if (!stream) return;
-
-    let w = video.videoWidth;
-    let h = video.videoHeight;
-
-    if (!w || !h) {
-        requestAnimationFrame(process);
+// =========================
+// VIDEO READY CHECK (핵심)
+// =========================
+function waitVideoReady() {
+    if (!video.videoWidth || !video.videoHeight) {
+        requestAnimationFrame(waitVideoReady);
         return;
     }
-
-    if (!src) {
-        src = new cv.Mat(h, w, cv.CV_8UC4);
-        gray = new cv.Mat();
-        res = new cv.Mat();
-    }
-
-    const cap = new cv.VideoCapture(video);
-    cap.read(src);
-
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.normalize(gray, gray, 0, 255, cv.NORM_MINMAX);
-
-    let now = Date.now();
-
-    for (let t of templates) {
-        cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
-        let m = cv.minMaxLoc(res);
-
-        if (m.maxVal > 0.88 && now - lastAlert > 800) {
-            lastAlert = now;
-            status.innerText = "🎯 감지: 아이템 " + t.id;
-            beep();
-            break;
-        }
-    }
-
-    setTimeout(process, 120);
+    startProcessing();
 }
 
-// ▶ 시작
+// =========================
+// MAIN LOOP
+// =========================
+function startProcessing() {
+    function process() {
+        if (!stream) return;
+
+        let w = video.videoWidth;
+        let h = video.videoHeight;
+
+        if (!w || !h) {
+            requestAnimationFrame(process);
+            return;
+        }
+
+        if (!src || src.cols !== w || src.rows !== h) {
+            src = new cv.Mat(h, w, cv.CV_8UC4);
+            gray = new cv.Mat();
+            res = new cv.Mat();
+        }
+
+        let cap = new cv.VideoCapture(video);
+        cap.read(src);
+
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.normalize(gray, gray, 0, 255, cv.NORM_MINMAX);
+
+        let now = Date.now();
+
+        for (let t of templates) {
+            cv.matchTemplate(gray, t.mat, res, cv.TM_CCOEFF_NORMED);
+            let m = cv.minMaxLoc(res);
+
+            if (m.maxVal > 0.88 && now - lastAlert > 800) {
+                lastAlert = now;
+                status.innerText = "Detected: " + t.id;
+                beep();
+                break;
+            }
+        }
+
+        setTimeout(process, 120);
+    }
+
+    process();
+}
+
+// =========================
+// START BUTTON
+// =========================
 startBtn.onclick = async () => {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     video.srcObject = stream;
 
     video.onloadedmetadata = () => {
-        process();
+        waitVideoReady();
     };
 };
 
-// OpenCV init
+// =========================
+// INIT OPENCV
+// =========================
 function init() {
-    status.innerText = "Loading templates...";
+    status.innerText = "Loading images...";
     loadTemplates();
 }
 
 if (typeof cv !== "undefined") init();
-else document.querySelector("script").onload = init;
+else document.addEventListener("opencvready", init);
 
 </script>
 
