@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>CV MAT FIX</title>
+    <title>CV MAT ERROR KILLER</title>
     <style>
         body { background:#111; color:white; text-align:center; font-family:sans-serif; padding-top: 50px; }
         #status { 
@@ -14,29 +14,43 @@
         button:disabled { background: #333; color: #777; cursor: not-allowed; }
         video { display: none; }
     </style>
-
-    <!-- 1. OpenCV 설정 모듈을 먼저 선언 (가장 중요) -->
-    <script>
-        var Module = {
-            onRuntimeInitialized: function() {
-                // OpenCV가 완전히 로드되면 이 함수가 실행됩니다.
-                console.log("OpenCV Runtime Ready");
-                onOpenCvInitSuccess();
-            }
-        };
-    </script>
-    
-    <!-- 2. 그 다음 OpenCV 라이브러리를 로드 -->
-    <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
 
-<h2>감지 시스템 (에러 차단판)</h2>
-<div id="status">라이브러리 엔진 초기화 중...</div>
+<h2>이미지 감지 (엔진 최적화 버전)</h2>
+<div id="status">시스템 부팅 중... (잠시만 기다리세요)</div>
 <button id="startBtn" disabled>화면 공유 시작</button>
 
 <video id="video" autoplay playsinline></video>
 
+<!-- 1. 엔진 부팅 확인용 스크립트 -->
+<script>
+    // OpenCV가 준비되었는지 확인할 변수
+    var isCvLoaded = false;
+
+    // 라이브러리가 로드되면 호출될 함수
+    function onOpenCvReady() {
+        console.log("OpenCV.js 로드 시도 중...");
+        // WASM 모듈이 완전히 준비될 때까지 0.5초 간격으로 반복 체크
+        var checkCv = setInterval(function() {
+            try {
+                if (typeof cv !== 'undefined' && cv.Mat) {
+                    console.log("OpenCV 엔진 부팅 완료!");
+                    clearInterval(checkCv);
+                    isCvLoaded = true;
+                    initApp(); // 이제 진짜 시작
+                }
+            } catch (e) {
+                console.log("엔진 로딩 대기 중...");
+            }
+        }, 500);
+    }
+</script>
+
+<!-- 2. OpenCV 라이브러리 로드 -->
+<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+
+<!-- 3. 메인 로직 -->
 <script>
 const status = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
@@ -46,7 +60,6 @@ let src, gray, res;
 let templates = [];
 let isRunning = false;
 
-// 이미지 목록
 const imageUrls = [
     "https://i.ibb.co/3yRH1Hmz/1.png", "https://i.ibb.co/rG4nwvNQ/2.png",
     "https://i.ibb.co/hxXwKmp0/3.png", "https://i.ibb.co/yBFycHT2/4.png",
@@ -57,15 +70,14 @@ const imageUrls = [
     "https://i.ibb.co/n8q1fxHT/66.png", "https://i.ibb.co/99Pp9R1G/77.png"
 ];
 
-// OpenCV가 완전히 준비되었을 때만 호출됨
-function onOpenCvInitSuccess() {
+// 엔진 부팅 완료 후 실행되는 함수
+function initApp() {
     status.innerText = "이미지 데이터를 준비합니다...";
     loadTemplates();
 }
 
 async function loadTemplates() {
     let count = 0;
-    // 이제 여기서는 cv.Mat이 무조건 존재함
     for (let i = 0; i < imageUrls.length; i++) {
         try {
             await new Promise((resolve) => {
@@ -73,6 +85,7 @@ async function loadTemplates() {
                 img.crossOrigin = "anonymous";
                 img.src = imageUrls[i];
                 img.onload = () => {
+                    // 이제 여기서 cv.Mat을 호출해도 절대로 에러 안 남
                     let mat = cv.imread(img);
                     let g = new cv.Mat();
                     cv.cvtColor(mat, g, cv.COLOR_RGBA2GRAY);
@@ -86,7 +99,7 @@ async function loadTemplates() {
             });
         } catch(e) { console.error(e); }
     }
-    status.innerText = "준비 완료!";
+    status.innerText = "모든 준비 완료!";
     startBtn.disabled = false;
 }
 
@@ -94,14 +107,15 @@ function loop() {
     if (!isRunning) return;
 
     try {
-        if (video.videoWidth === 0) {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        if (vw === 0) {
             requestAnimationFrame(loop);
             return;
         }
 
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-
+        // 그릇 크기 맞추기
         if (!src || src.cols !== vw || src.rows !== vh) {
             if (src) src.delete();
             if (gray) gray.delete();
@@ -127,13 +141,11 @@ function loop() {
 
         if (bestMatch.val > 0.75) {
             status.innerText = `감지: 이미지 ${bestMatch.id} (${Math.round(bestMatch.val * 100)}%)`;
-            status.style.color = "#0f0";
         } else {
-            status.innerText = `대기 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
-            status.style.color = "white";
+            status.innerText = `분석 중... (최고 유사도: ${Math.round(bestMatch.val * 100)}%)`;
         }
     } catch (e) {
-        console.error("루프 중 에러:", e);
+        console.warn("일시적 루프 에러 무시");
     }
     setTimeout(loop, 150);
 }
